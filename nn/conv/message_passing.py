@@ -13,8 +13,9 @@ from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.nn.dense.linear import Linear
 from torch_geometric.nn.inits import zeros
 from torch_geometric.typing import Adj, OptTensor, PairTensor, Optional
-#from torch_geometric.utils import add_remaining_self_loops
 from torch_geometric.utils.num_nodes import maybe_num_nodes
+
+from Models.torch.util import align, align_dims
 
 
 class MessagePassing(torch_geometric.nn.conv.MessagePassing):
@@ -141,92 +142,3 @@ class MessagePassing(torch_geometric.nn.conv.MessagePassing):
             return segment_csr(inputs, ptr, reduce=self.aggr)
         else:
             return scatter(inputs, index, dim=self.node_dim, dim_size=dim_size, reduce=self.aggr)
-
-
-def align_dims(x, y, x_dim, y_dim):
-    if len(x.shape) > len(y.shape):
-        raise ValueError(
-            "Input x must have fewer dimensions than y to be aligned. Received x.shape=%s and y.shape=%s" % (
-                x.shape, y.shape
-            )
-        )
-    elif len(x.shape) == len(y.shape):
-        return x
-    if x_dim < 0:
-        x_dim = len(x.shape) + x_dim
-    if y_dim < 0:
-        y_dim = len(y.shape) + y_dim
-    new_shape = [1 for _ in y.shape]
-    start = y_dim - x_dim
-    end = start + len(x.shape)
-    new_shape[start:end] = x.shape
-    return x.view(new_shape)
-
-
-def align(inputs, dims):
-    if not (isinstance(inputs, tuple) or isinstance(inputs, list)) or not all([isinstance(inp, torch.Tensor) for inp in inputs]):
-        raise ValueError("Argumet inputs must be tuple or list of tensors")
-    if len(inputs) < 2:
-        return inputs
-    if isinstance(dims, int):
-        dims = tuple(dims for inp in inputs)
-    elif not isinstance(dim, tuple):
-        raise ValueError("Argument dim must be int or tuple of ints")
-    input_dims = [inp.dim() for inp in inputs]
-    idx = input_dims.index(max(input_dims))
-    y = inputs[idx]
-    y_dim = dims[idx]
-    return [align_dims(inp, y, dim, y_dim) for inp, dim in zip(inputs, dims)]
-
-
-def add_remaining_self_loops(edge_index, edge_weight: Optional[torch.Tensor] = None, fill_value: float = 1., num_nodes: Optional[int] = None):
-    r"""Adds remaining self-loop :math:`(i,i) \in \mathcal{E}` to every node
-    :math:`i \in \mathcal{V}` in the graph given by :attr:`edge_index`.
-    In case the graph is weighted and already contains a few self-loops, only
-    non-existent self-loops will be added with edge weights denoted by
-    :obj:`fill_value`.
-
-    Args:
-        edge_index (LongTensor): The edge indices.
-        edge_weight (Tensor, optional): One-dimensional edge weights.
-            (default: :obj:`None`)
-        fill_value (float, optional): If :obj:`edge_weight` is not :obj:`None`,
-            will add self-loops with edge weights of :obj:`fill_value` to the
-            graph. (default: :obj:`1.`)
-        num_nodes (int, optional): The number of nodes, *i.e.*
-            :obj:`max_val + 1` of :attr:`edge_index`. (default: :obj:`None`)
-
-    :rtype: (:class:`LongTensor`, :class:`Tensor`)
-    """
-    if edge_index.dim() > 2:
-        orig_size = edge_index.size()
-        n_edges = orig_size[-1]
-        edge_index = edge_index.view(-1, 2, n_edges)
-        edge_index_set, edge_weight_set = [], []
-        for i in range(edge_index.size(0)):
-            _edge_index = edge_index[i]
-            _edge_weight = edge_weight
-            if not edge_weight is None:
-                _edge_weight = edge_weight[i]
-            _edge_index, _edge_weight = torch_geometric.utils.add_remaining_self_loops(
-                _edge_index, _edge_weight, fill_value, num_nodes
-            )
-            edge_index_set.append(_edge_index)
-            edge_weight_set.append(_edge_weight)
-        try:
-            edge_index = torch.cat(edge_index_set)
-        except RuntimeError as e:
-            if "Sizes of tensors must match" in str(e):
-                raise RuntimeError(
-                    (
-                        "Failed to add self loops to dynamic edge_index because number "
-                        "of added self loops was not uniform across instances resulting "
-                        "in a ragged tensor."
-                    )
-                )
-        edge_index = edge_index.view(orig_size[:-1] + edge_index.size()[-1:])
-        if not edge_weight is None:
-            edge_weight = torch.cat(edge_weight_set, 0)
-            edge_weight = edge_weight.view(orig_size[:-1] + edge_weight.size()[-1:])
-        return edge_index, edge_weight
-    return torch_geometric.utils.add_remaining_self_loops(edge_index, edge_weight, fill_value, num_nodes)

@@ -11,7 +11,8 @@ from torch_geometric.nn.dense.linear import Linear
 from torch_geometric.utils import add_remaining_self_loops
 from torch_geometric.utils.num_nodes import maybe_num_nodes
 
-from .message_passing import MessagePassing, align
+from .message_passing import MessagePassing
+from Models.torch.util import align, align_dims
 
 @torch.jit._overload
 def gcn_norm(edge_index, edge_weight=None, num_nodes=None, improved=False,
