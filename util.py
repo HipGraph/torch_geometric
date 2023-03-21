@@ -1,6 +1,7 @@
 import torch
 import torch_geometric
 import inspect
+from torch_scatter import scatter_sum
 from torch_geometric.typing import Adj, OptTensor, PairTensor, Optional
 
 import Utility as util
@@ -382,3 +383,92 @@ def add_remaining_self_loops(edge_index, edge_weight: Optional[torch.Tensor] = N
             edge_weight = edge_weight.view(orig_size[:-1] + edge_weight.size()[-1:])
         return edge_index, edge_weight
     return torch_geometric.utils.add_remaining_self_loops(edge_index, edge_weight, fill_value, num_nodes)
+
+
+def get_sink_sums(edge_index, edge_weight, normalize, debug=0):
+    source_index = torch.squeeze(
+        torch.index_select(edge_index, -2, torch.tensor(0, device=edge_weight.device)), -2
+    )
+    sink_index = torch.squeeze(
+        torch.index_select(edge_index, -2, torch.tensor(1, device=edge_weight.device)), -2
+    )
+    if normalize == 1: # edge_weight.shape=(?, |E|)
+        if debug:
+            print("sink_index =", sink_index.shape, "=")
+            if debug > 1:
+                print(sink_index)
+        if sink_index.shape > edge_weight.shape:
+            edge_weight = edge_weight.expand(sink_index.size())
+            if debug:
+                print("edge_weight reshaped =", edge_weight.shape, "=")
+            if debug > 1:
+                print(edge_weight)
+        sink_sums = scatter_sum(edge_weight, sink_index, dim=-1)
+        if debug:
+            print("sink_sums 1. =", sink_sums.shape, "=")
+            if debug > 1:
+                print(sink_sums)
+        sink_sums = torch.take_along_dim(sink_sums, sink_index, -1)
+        if debug:
+            print("sink_sums 2. =", sink_sums.shape, "=")
+            if debug > 1:
+                print(sink_sums)
+        # Check for and fix unsafe division - Summation s=0 when w(i,j)=0 for all i
+        #   For e(i,j), setting s=1 gives   j = w(i,j) / s * i   =>   j = 0 / 1 * i
+        #   This does not transform w(i,j) but the computation is correct with i=0
+        sink_sums[sink_sums == 0] = 1
+        if debug:
+            print("sink_sums 3. =", sink_sums.shape, "=")
+            if debug > 1:
+                print(sink_sums)
+    elif normalize == 2: # edge_weight.shape=(?, |V|)
+        if debug:
+            print("source_index =", source_index.shape, "=")
+            if debug > 1:
+                print(source_index)
+        if debug:
+            print("sink_index =", sink_index.shape, "=")
+            if debug > 1:
+                print(sink_index)
+        source_weight = torch.take_along_dim(edge_weight, source_index, -1)
+        sink_weight = torch.take_along_dim(edge_weight, sink_index, -1)
+        if 0:
+            if sink_index.shape > edge_weight.shape:
+                edge_weight = edge_weight.expand(sink_index.size())
+                if debug:
+                    print("edge_weight reshaped =", edge_weight.shape, "=")
+                if debug > 1:
+                    print(edge_weight)
+        # Get summation of edge weights for sink node i across all incoming nodes j \in N(i)
+        #   For method=2, this is simply the feature value (streamflow) of the sink node
+        sink_sums = sink_weight
+        if debug:
+            print("sink_sums 1. =", sink_sums.shape, "=")
+            if debug > 1:
+                print(sink_sums)
+        # Check for and fix unsafe division - Summation s=0 when w(j,?)=0
+        #   For e(i,j), setting s=1 gives   j = w(i,j) / s * i   =>   j = w(i,j) / 1 * i
+        #   This does not transform w(i,j) AND the computation is incorrect!
+        #   ***The best we can do is use normalization=1 since the s in undefined in this situation
+        mask = sink_sums == 0
+        sink_sums[mask] = get_sink_sums(edge_index, source_weight, 1)[mask]
+    else:
+        raise NotImplementedError("Unknown option for \"normalize\" %d" % (normalize))
+    return sink_sums
+
+def normalize_edge_weight(edge_index, edge_weight, normalize, debug=0):
+    sink_sums = get_sink_sums(edge_index, edge_weight, normalize, debug)
+    source_index = torch.squeeze(
+        torch.index_select(edge_index, -2, torch.tensor(0, device=edge_weight.device)), -2
+    )
+    sink_index = torch.squeeze(
+        torch.index_select(edge_index, -2, torch.tensor(1, device=edge_weight.device)), -2
+    )
+    if normalize == 1: # edge_weight.shape=(?, |E|)
+        edge_weight = edge_weight / sink_sums
+    elif normalize == 2: # edge_weight.shape=(?, |V|)
+        source_weight = torch.take_along_dim(edge_weight, source_index, -1)
+        edge_weight = source_weight / sink_sums
+    else:
+        raise NotImplementedError("Unknown option for \"normalize\" %d" % (normalize))
+    return edge_weight
