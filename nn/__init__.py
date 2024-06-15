@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 
-import Models.torch.util as pyt_util
+import model.mytorch.util as pyt_util
 from .. import util as pyg_util
 from .conv.message_passing import MessagePassing
 

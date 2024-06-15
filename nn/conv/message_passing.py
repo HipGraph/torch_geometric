@@ -15,7 +15,7 @@ from torch_geometric.nn.inits import zeros
 from torch_geometric.typing import Adj, OptTensor, PairTensor, Optional
 from torch_geometric.utils.num_nodes import maybe_num_nodes
 
-from Models.torch.util import align, align_dims
+from model.mytorch.util import align, align_dims
 
 
 class MessagePassing(torch_geometric.nn.conv.MessagePassing):

@@ -4,7 +4,7 @@ import inspect
 from torch_scatter import scatter_sum
 from torch_geometric.typing import Adj, OptTensor, PairTensor, Optional
 
-import Utility as util
+import util
 from .nn.conv.flow_conv import FlowConv
 
 

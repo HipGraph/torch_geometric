@@ -9,8 +9,8 @@ from torch_geometric.utils.num_nodes import maybe_num_nodes
 from .message_passing import MessagePassing
 from ... import util as pyg_util
 
-import Utility as util
-from Models.torch import util as pyt_util
+import util
+from model.mytorch import util as pyt_util
 
 
 class FlowConv(MessagePassing):
